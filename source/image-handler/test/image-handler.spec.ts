@@ -27,6 +27,7 @@ describe('process()', () => {
     it('Should pass if the output image is different from the input image with edits applied', async () => {
       // Arrange
       const request: ImageRequestInfo = {
+        imageUrl: 'https://image.url/img-png',
         requestType: RequestTypes.DEFAULT,
         bucket: 'sample-bucket',
         key: 'sample-image-001.jpg',
@@ -50,6 +51,7 @@ describe('process()', () => {
     it('Should pass if the output image is in a different format than the original image', async () => {
       // Arrange
       const request: ImageRequestInfo = {
+        imageUrl: 'https://image.url/img-png',
         requestType: RequestTypes.DEFAULT,
         bucket: 'sample-bucket',
         key: 'sample-image-001.jpg',
@@ -71,6 +73,7 @@ describe('process()', () => {
     it('Should pass if the output image is webp format and reductionEffort is provided', async () => {
       // Arrange
       const request: ImageRequestInfo = {
+        imageUrl: 'https://image.url/img-png',
         requestType: RequestTypes.DEFAULT,
         bucket: 'sample-bucket',
         key: 'sample-image-001.jpg',
@@ -93,6 +96,7 @@ describe('process()', () => {
     it('Should pass if no edits are specified and the original image is returned', async () => {
       // Arrange
       const request: ImageRequestInfo = {
+        imageUrl: 'https://image.url/img-png',
         requestType: RequestTypes.DEFAULT,
         bucket: 'sample-bucket',
         key: 'sample-image-001.jpg',
@@ -112,6 +116,7 @@ describe('process()', () => {
     it('Should fail the return payload is larger than 6MB', async () => {
       // Arrange
       const request: ImageRequestInfo = {
+        imageUrl: 'https://image.url/img-png',
         requestType: RequestTypes.DEFAULT,
         bucket: 'sample-bucket',
         key: 'sample-image-001.jpg',
@@ -138,6 +143,7 @@ describe('process()', () => {
       // Arrange
       const originalImage = fs.readFileSync('./test/image/1x1.jpg');
       const request: ImageRequestInfo = {
+        imageUrl: 'https://image.url/img-png',
         requestType: RequestTypes.DEFAULT,
         bucket: 'sample-bucket',
         key: 'test.jpg',
@@ -164,6 +170,7 @@ describe('process()', () => {
       // Arrange
       const originalImage = fs.readFileSync('./test/image/1x1.jpg');
       const request: ImageRequestInfo = {
+        imageUrl: 'https://image.url/img-png',
         requestType: RequestTypes.DEFAULT,
         bucket: 'sample-bucket',
         key: 'test.jpg',
@@ -192,6 +199,7 @@ describe('process()', () => {
     it('Should pass if the original image does not have orientation', async () => {
       // Arrange
       const request: ImageRequestInfo = {
+        imageUrl: 'https://image.url/img-png',
         requestType: RequestTypes.DEFAULT,
         bucket: 'sample-bucket',
         key: 'test.jpg',
