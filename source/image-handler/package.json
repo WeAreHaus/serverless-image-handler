@@ -17,6 +17,7 @@
   "dependencies": {
     "aws-sdk": "^2.1467.0",
     "color": "4.2.3",
+    "axios": "^0.27.2",
     "color-name": "1.1.4",
     "sharp": "^0.32.6"
   },
