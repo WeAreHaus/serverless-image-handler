@@ -209,7 +209,7 @@ export class ImageRequest {
 
   /**
    * Gets the original image from an Amazon S3 bucket.
-   * @param imageUrl The image URL //The name of the bucket containing the image.
+   * @param imageUrl The image URL
    * @param key The key name corresponding to the image.
    * @returns The original image or an error.
    */
@@ -237,8 +237,7 @@ export class ImageRequest {
 
       // const imageLocation = { Bucket: imageUrl, Key: key };
       // const originalImage = await this.s3Client.getObject(imageLocation).promise();
-      const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'}) as Uint8Array;
-      const imageBuffer = Buffer.from(originalImage);
+
       // const imageBuffer = Buffer.from(originalImage.Body as Uint8Array);
 
       // if (originalImage.ContentType) {
@@ -262,12 +261,11 @@ export class ImageRequest {
 
       result.cacheControl = originalImage.CacheControl ?? "max-age=31536000,public";
       // result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
-=======
-      const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'}) as Uint8Array;
-      const imageBuffer = Buffer.from(originalImage);
+
+      const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'});
+      const imageBuffer = Buffer.from(originalImage.data as Uint8Array);
       result.contentType = 'image';
       result.cacheControl = 'max-age=31536000,public';
->>>>>>> cc06084 (Get image from bucket if no image URL)
       result.originalImage = imageBuffer;
 
       return result;
