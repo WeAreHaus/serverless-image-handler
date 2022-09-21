@@ -32,15 +32,21 @@ export class ImageRequest {
       await this.validateRequestSignature(event);
 
       let imageRequestInfo: ImageRequestInfo = <ImageRequestInfo>{};
-
       imageRequestInfo.requestType = this.parseRequestType(event);
-      // imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
-      imageRequestInfo.imageUrl = this.parseImageUrl(event, imageRequestInfo.requestType);
+
+      let originalImage: OriginalImageInfo;
+      imageRequestInfo.imageUrl = this.parseImageUrl(event);
+      
+      if (!imageRequestInfo.imageUrl) {
+        imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
+        originalImage = await this.getOriginalImage(imageRequestInfo.bucket, imageRequestInfo.key);
+      } else {
+        originalImage = await this.getOriginalImageFromUrl(imageRequestInfo.imageUrl, imageRequestInfo.key);
+      }
+
       imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType);
       imageRequestInfo.edits = this.parseImageEdits(event, imageRequestInfo.requestType);
 
-      // const originalImage = await this.getOriginalImage(imageRequestInfo.bucket, imageRequestInfo.key);
-      const originalImage = await this.getOriginalImage(imageRequestInfo.imageUrl, imageRequestInfo.key);
       imageRequestInfo = { ...imageRequestInfo, ...originalImage };
 
       imageRequestInfo.headers = this.parseImageHeaders(event, imageRequestInfo.requestType);
@@ -97,42 +103,68 @@ export class ImageRequest {
     }
   }
 
+/**
+   * Gets the original image from an Amazon S3 bucket.
+   * @param bucket The name of the bucket containing the image.
+   * @param key The key name corresponding to the image.
+   * @returns The original image or an error.
+   */
+ public async getOriginalImage(bucket: string, key: string): Promise<OriginalImageInfo> {
+  try {
+    const result: OriginalImageInfo = {};
+
+    const imageLocation = { Bucket: bucket, Key: key };
+    const originalImage = await this.s3Client.getObject(imageLocation).promise();
+
+    const imageBuffer = Buffer.from(originalImage.Body as Uint8Array);
+
+    if (originalImage.ContentType) {
+      // If using default S3 ContentType infer from hex headers
+      if (['binary/octet-stream', 'application/octet-stream'].includes(originalImage.ContentType)) {
+        result.contentType = this.inferImageType(imageBuffer);
+      } else {
+        result.contentType = originalImage.ContentType;
+      }
+    } else {
+      result.contentType = 'image';
+    }
+
+    if (originalImage.Expires) {
+      result.expires = new Date(originalImage.Expires).toUTCString();
+    }
+
+    if (originalImage.LastModified) {
+      result.lastModified = new Date(originalImage.LastModified).toUTCString();
+    }
+
+    result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
+    result.cacheControl = 'max-age=31536000,public';
+    result.originalImage = imageBuffer;
+
+    return result;
+  } catch (error) {
+    let status = StatusCodes.INTERNAL_SERVER_ERROR;
+    let message = error.message;
+    if (error.code === 'NoSuchKey') {
+      status = StatusCodes.NOT_FOUND;
+      message = `The image ${key} does not exist or the request may not be base64 encoded properly.`;
+    }
+    throw new ImageHandlerError(status, error.code, message);
+  }
+}
+
   /**
    * Gets the original image from an Amazon S3 bucket.
    * @param imageUrl The image URL //The name of the bucket containing the image.
    * @param key The key name corresponding to the image.
    * @returns The original image or an error.
    */
-  public async getOriginalImage(imageUrl: string, key: string): Promise<OriginalImageInfo> {
+  public async getOriginalImageFromUrl(imageUrl: string, key: string): Promise<OriginalImageInfo> {
     try {
       const result: OriginalImageInfo = {};
-
-      // const imageLocation = { Bucket: imageUrl, Key: key };
-      // const originalImage = await this.s3Client.getObject(imageLocation).promise();
       const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'}) as Uint8Array;
       const imageBuffer = Buffer.from(originalImage);
-      // const imageBuffer = Buffer.from(originalImage.Body as Uint8Array);
-
-      // if (originalImage.ContentType) {
-      //   // If using default S3 ContentType infer from hex headers
-      //   if (['binary/octet-stream', 'application/octet-stream'].includes(originalImage.ContentType)) {
-      //     result.contentType = this.inferImageType(imageBuffer);
-      //   } else {
-      //     result.contentType = originalImage.ContentType;
-      //   }
-      // } else {
-        result.contentType = 'image';
-      // }
-
-      // if (originalImage.Expires) {
-      //   result.expires = new Date(originalImage.Expires).toUTCString();
-      // }
-
-      // if (originalImage.LastModified) {
-      //   result.lastModified = new Date(originalImage.LastModified).toUTCString();
-      // }
-
-      // result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
+      result.contentType = 'image';
       result.cacheControl = 'max-age=31536000,public';
       result.originalImage = imageBuffer;
 
@@ -148,16 +180,11 @@ export class ImageRequest {
     }
   }
 
-  parseImageUrl(event: ImageHandlerEvent, requestType: RequestTypes): string {
+  parseImageUrl(event: ImageHandlerEvent): string | null {
+    // Decode the image request
     const { imageUrl } = this.decodeRequest(event);
 
-    if (!imageUrl) {
-      throw new ImageHandlerError(
-        StatusCodes.BAD_REQUEST,
-        'ImageUrl::MissingUrl',
-        'An image URL must be specified.'
-      );
-    } else if (!this.isValidUrl(imageUrl)) {
+    if (imageUrl && !this.isValidUrl(imageUrl)) {
       throw new ImageHandlerError(
         StatusCodes.BAD_REQUEST,
         'ImageUrl::InvalidUrl',

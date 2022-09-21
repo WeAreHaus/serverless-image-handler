@@ -19,7 +19,7 @@ export interface ImageHandlerEvent {
 
 export interface DefaultImageRequest {
   bucket?: string;
-  imageUrl: string;
+  imageUrl?: string;
   key: string;
   edits?: ImageEdits;
   outputFormat?: ImageFormatTypes;
