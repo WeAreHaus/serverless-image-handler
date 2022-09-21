@@ -33,9 +33,11 @@ export class ImageRequest {
 
       let imageRequestInfo: ImageRequestInfo = <ImageRequestInfo>{};
       imageRequestInfo.requestType = this.parseRequestType(event);
+      imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType);
+      imageRequestInfo.edits = this.parseImageEdits(event, imageRequestInfo.requestType);
 
       let originalImage: OriginalImageInfo;
-      imageRequestInfo.imageUrl = this.parseImageUrl(event);
+      imageRequestInfo.imageUrl = imageRequestInfo.requestType === RequestTypes.DEFAULT ? this.parseImageUrl(event) : null;
       
       if (!imageRequestInfo.imageUrl) {
         imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
@@ -44,11 +46,7 @@ export class ImageRequest {
         originalImage = await this.getOriginalImageFromUrl(imageRequestInfo.imageUrl, imageRequestInfo.key);
       }
 
-      imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType);
-      imageRequestInfo.edits = this.parseImageEdits(event, imageRequestInfo.requestType);
-
       imageRequestInfo = { ...imageRequestInfo, ...originalImage };
-
       imageRequestInfo.headers = this.parseImageHeaders(event, imageRequestInfo.requestType);
 
       // If the original image is SVG file and it has any edits but no output format, change the format to WebP.
@@ -138,7 +136,6 @@ export class ImageRequest {
     }
 
     result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
-    result.cacheControl = 'max-age=31536000,public';
     result.originalImage = imageBuffer;
 
     return result;
@@ -182,17 +179,17 @@ export class ImageRequest {
 
   parseImageUrl(event: ImageHandlerEvent): string | null {
     // Decode the image request
-    const { imageUrl } = this.decodeRequest(event);
+    const decoded = this.decodeRequest(event);
 
-    if (imageUrl && !this.isValidUrl(imageUrl)) {
+    if (decoded?.imageUrl && !this.isValidUrl(decoded.imageUrl)) {
       throw new ImageHandlerError(
         StatusCodes.BAD_REQUEST,
         'ImageUrl::InvalidUrl',
-        `${imageUrl} is not a valid URL.`
+        `${decoded.imageUrl} is not a valid URL.`
       );
     }
 
-    return imageUrl;
+    return decoded?.imageUrl;
   }
 
 

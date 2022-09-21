@@ -42,7 +42,7 @@ export interface BoxSize {
 export interface ImageRequestInfo {
   requestType: RequestTypes;
   bucket?: string;
-  imageUrl: string;
+  imageUrl?: string;
   key: string;
   edits?: ImageEdits;
   originalImage: Buffer;
