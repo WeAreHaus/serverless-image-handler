@@ -152,15 +152,15 @@ export class ImageRequest {
 
   /**
    * Gets the original image from an Amazon S3 bucket.
-   * @param imageUrl The image URL //The name of the bucket containing the image.
+   * @param imageUrl The image URL
    * @param key The key name corresponding to the image.
    * @returns The original image or an error.
    */
   public async getOriginalImageFromUrl(imageUrl: string, key: string): Promise<OriginalImageInfo> {
     try {
       const result: OriginalImageInfo = {};
-      const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'}) as Uint8Array;
-      const imageBuffer = Buffer.from(originalImage);
+      const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'});
+      const imageBuffer = Buffer.from(originalImage.data as Uint8Array);
       result.contentType = 'image';
       result.cacheControl = 'max-age=31536000,public';
       result.originalImage = imageBuffer;
