@@ -33,17 +33,17 @@ export class ImageRequest {
 
       let imageRequestInfo: ImageRequestInfo = <ImageRequestInfo>{};
       imageRequestInfo.requestType = this.parseRequestType(event);
-      imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType);
       imageRequestInfo.edits = this.parseImageEdits(event, imageRequestInfo.requestType);
-
+      
       let originalImage: OriginalImageInfo;
       imageRequestInfo.imageUrl = imageRequestInfo.requestType === RequestTypes.DEFAULT ? this.parseImageUrl(event) : null;
       
       if (!imageRequestInfo.imageUrl) {
+        imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType);
         imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
         originalImage = await this.getOriginalImage(imageRequestInfo.bucket, imageRequestInfo.key);
       } else {
-        originalImage = await this.getOriginalImageFromUrl(imageRequestInfo.imageUrl, imageRequestInfo.key);
+        originalImage = await this.getOriginalImageFromUrl(imageRequestInfo.imageUrl);
       }
 
       imageRequestInfo = { ...imageRequestInfo, ...originalImage };
@@ -153,10 +153,9 @@ export class ImageRequest {
   /**
    * Gets the original image from an Amazon S3 bucket.
    * @param imageUrl The image URL
-   * @param key The key name corresponding to the image.
    * @returns The original image or an error.
    */
-  public async getOriginalImageFromUrl(imageUrl: string, key: string): Promise<OriginalImageInfo> {
+  public async getOriginalImageFromUrl(imageUrl: string): Promise<OriginalImageInfo> {
     try {
       const result: OriginalImageInfo = {};
       const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'});
@@ -169,10 +168,6 @@ export class ImageRequest {
     } catch (error) {
       let status = StatusCodes.INTERNAL_SERVER_ERROR;
       let message = error.message;
-      if (error.code === 'NoSuchKey') {
-        status = StatusCodes.NOT_FOUND;
-        message = `The image ${key} does not exist or the request may not be base64 encoded properly.`;
-      }
       throw new ImageHandlerError(status, error.code, message);
     }
   }
