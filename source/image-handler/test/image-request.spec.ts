@@ -157,6 +157,7 @@ describe('setup()', () => {
       const expectedResult = {
         requestType: 'Thumbor',
         bucket: 'allowedBucket001',
+        imageUrl: null,
         key: 'test-image-001.jpg',
         edits: { grayscale: true },
         originalImage: Buffer.from('SampleImageContent\n'),
@@ -204,6 +205,7 @@ describe('setup()', () => {
       const expectedResult = {
         requestType: 'Thumbor',
         bucket: 'allowedBucket001',
+        imageUrl: null,
         key: 'test-image-001.jpg',
         edits: {
           toFormat: 'png',
@@ -267,6 +269,7 @@ describe('setup()', () => {
       const expectedResult = {
         requestType: RequestTypes.CUSTOM,
         bucket: 'allowedBucket001',
+        imageUrl: null,
         key: 'custom-image.jpg',
         edits: {
           grayscale: true,
@@ -314,6 +317,7 @@ describe('setup()', () => {
       const expectedResult = {
         requestType: RequestTypes.CUSTOM,
         bucket: 'allowedBucket001',
+        imageUrl: null,
         key: 'custom-image',
         edits: {
           grayscale: true,
@@ -584,6 +588,7 @@ describe('setup()', () => {
       const expectedResult = {
         requestType: 'Thumbor',
         bucket: 'validBucket',
+        imageUrl: null,
         key: 'image.svg',
         edits: {},
         originalImage: Buffer.from('SampleImageContent\n'),
@@ -618,6 +623,7 @@ describe('setup()', () => {
       const expectedResult = {
         requestType: 'Thumbor',
         bucket: 'validBucket',
+        imageUrl: null,
         key: 'image.svg',
         edits: { resize: { width: 100, height: 100 } },
         outputFormat: 'png',
@@ -653,6 +659,7 @@ describe('setup()', () => {
       const expectedResult = {
         requestType: 'Thumbor',
         bucket: 'validBucket',
+        imageUrl: null,
         key: 'image.svg',
         edits: { toFormat: 'jpeg' },
         outputFormat: 'jpeg',

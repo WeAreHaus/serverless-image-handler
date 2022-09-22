@@ -3,6 +3,7 @@
 
 import S3 from 'aws-sdk/clients/s3';
 import { createHmac } from 'crypto';
+import axios from 'axios';
 
 import { DefaultImageRequest, ImageEdits, ImageFormatTypes, ImageHandlerError, ImageHandlerEvent, ImageRequestInfo, Headers, RequestTypes, StatusCodes } from './lib';
 import { SecretProvider } from './secret-provider';
@@ -31,15 +32,21 @@ export class ImageRequest {
       await this.validateRequestSignature(event);
 
       let imageRequestInfo: ImageRequestInfo = <ImageRequestInfo>{};
-
       imageRequestInfo.requestType = this.parseRequestType(event);
-      imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
-      imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType);
       imageRequestInfo.edits = this.parseImageEdits(event, imageRequestInfo.requestType);
+      
+      let originalImage: OriginalImageInfo;
+      imageRequestInfo.imageUrl = imageRequestInfo.requestType === RequestTypes.DEFAULT ? this.parseImageUrl(event) : null;
+      
+      if (!imageRequestInfo.imageUrl) {
+        imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType);
+        imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
+        originalImage = await this.getOriginalImage(imageRequestInfo.bucket, imageRequestInfo.key);
+      } else {
+        originalImage = await this.getOriginalImageFromUrl(imageRequestInfo.imageUrl);
+      }
 
-      const originalImage = await this.getOriginalImage(imageRequestInfo.bucket, imageRequestInfo.key);
       imageRequestInfo = { ...imageRequestInfo, ...originalImage };
-
       imageRequestInfo.headers = this.parseImageHeaders(event, imageRequestInfo.requestType);
 
       // If the original image is SVG file and it has any edits but no output format, change the format to WebP.
@@ -94,53 +101,92 @@ export class ImageRequest {
     }
   }
 
-  /**
+/**
    * Gets the original image from an Amazon S3 bucket.
    * @param bucket The name of the bucket containing the image.
    * @param key The key name corresponding to the image.
    * @returns The original image or an error.
    */
-  public async getOriginalImage(bucket: string, key: string): Promise<OriginalImageInfo> {
+ public async getOriginalImage(bucket: string, key: string): Promise<OriginalImageInfo> {
+  try {
+    const result: OriginalImageInfo = {};
+
+    const imageLocation = { Bucket: bucket, Key: key };
+    const originalImage = await this.s3Client.getObject(imageLocation).promise();
+
+    const imageBuffer = Buffer.from(originalImage.Body as Uint8Array);
+
+    if (originalImage.ContentType) {
+      // If using default S3 ContentType infer from hex headers
+      if (['binary/octet-stream', 'application/octet-stream'].includes(originalImage.ContentType)) {
+        result.contentType = this.inferImageType(imageBuffer);
+      } else {
+        result.contentType = originalImage.ContentType;
+      }
+    } else {
+      result.contentType = 'image';
+    }
+
+    if (originalImage.Expires) {
+      result.expires = new Date(originalImage.Expires).toUTCString();
+    }
+
+    if (originalImage.LastModified) {
+      result.lastModified = new Date(originalImage.LastModified).toUTCString();
+    }
+
+    result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
+    result.originalImage = imageBuffer;
+
+    return result;
+  } catch (error) {
+    let status = StatusCodes.INTERNAL_SERVER_ERROR;
+    let message = error.message;
+    if (error.code === 'NoSuchKey') {
+      status = StatusCodes.NOT_FOUND;
+      message = `The image ${key} does not exist or the request may not be base64 encoded properly.`;
+    }
+    throw new ImageHandlerError(status, error.code, message);
+  }
+}
+
+  /**
+   * Gets the original image from an Amazon S3 bucket.
+   * @param imageUrl The image URL
+   * @returns The original image or an error.
+   */
+  public async getOriginalImageFromUrl(imageUrl: string): Promise<OriginalImageInfo> {
     try {
       const result: OriginalImageInfo = {};
-
-      const imageLocation = { Bucket: bucket, Key: key };
-      const originalImage = await this.s3Client.getObject(imageLocation).promise();
-      const imageBuffer = Buffer.from(originalImage.Body as Uint8Array);
-
-      if (originalImage.ContentType) {
-        // If using default S3 ContentType infer from hex headers
-        if (['binary/octet-stream', 'application/octet-stream'].includes(originalImage.ContentType)) {
-          result.contentType = this.inferImageType(imageBuffer);
-        } else {
-          result.contentType = originalImage.ContentType;
-        }
-      } else {
-        result.contentType = 'image';
-      }
-
-      if (originalImage.Expires) {
-        result.expires = new Date(originalImage.Expires).toUTCString();
-      }
-
-      if (originalImage.LastModified) {
-        result.lastModified = new Date(originalImage.LastModified).toUTCString();
-      }
-
-      result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
+      const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'});
+      const imageBuffer = Buffer.from(originalImage.data as Uint8Array);
+      result.contentType = 'image';
+      result.cacheControl = 'max-age=31536000,public';
       result.originalImage = imageBuffer;
 
       return result;
     } catch (error) {
       let status = StatusCodes.INTERNAL_SERVER_ERROR;
       let message = error.message;
-      if (error.code === 'NoSuchKey') {
-        status = StatusCodes.NOT_FOUND;
-        message = `The image ${key} does not exist or the request may not be base64 encoded properly.`;
-      }
       throw new ImageHandlerError(status, error.code, message);
     }
   }
+
+  parseImageUrl(event: ImageHandlerEvent): string | null {
+    // Decode the image request
+    const decoded = this.decodeRequest(event);
+
+    if (decoded?.imageUrl && !this.isValidUrl(decoded.imageUrl)) {
+      throw new ImageHandlerError(
+        StatusCodes.BAD_REQUEST,
+        'ImageUrl::InvalidUrl',
+        `${decoded.imageUrl} is not a valid URL.`
+      );
+    }
+
+    return decoded?.imageUrl;
+  }
+
 
   /**
    * Parses the name of the appropriate Amazon S3 bucket to source the original image from.
@@ -441,6 +487,15 @@ export class ImageRequest {
         console.error('Error occurred while checking signature.', error);
         throw new ImageHandlerError(StatusCodes.INTERNAL_SERVER_ERROR, 'SignatureValidationFailure', 'Signature validation failed.');
       }
+    }
+  }
+
+  private isValidUrl(url: string): boolean {
+    try {
+      new URL(url);
+      return true;
+    } catch (error) {
+      return false;
     }
   }
 }
