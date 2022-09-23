@@ -49,10 +49,7 @@ export class ImageRequest {
     baseURL: 'https://app.webien.io.haus.se/api/',
     httpsAgent: new https.Agent({
       rejectUnauthorized: false
-    }),
-    headers: {
-      Authorization: 'Basic aGF1czpsaWZl'
-    }
+    })
   });
 
   /**
@@ -671,7 +668,7 @@ export class ImageRequest {
     }
 
     if (!this.requestData.publicKey) {
-      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingSlug', 'The request is missing the property `slug`');
+      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingPublicApiKey', 'The request is missing the property `publicKey`');
     }
 
     let response = null;
@@ -682,13 +679,13 @@ export class ImageRequest {
       throw new ImageHandlerError(
         StatusCodes.INTERNAL_SERVER_ERROR,
         'OriginAndSourceValidation::UnableToGetValidationData',
-        `Unable to get validation data for slug '${this.requestData.publicKey}': ${error.message}`
+        `Unable to get validation data for public API key '${this.requestData.publicKey}': ${error.message}`
       );
     }
 
     if (!response.data.sources || !response.data.origin) {
       console.error('No origin or image sources in response. Response:', response.data);
-      throw new ImageHandlerError(StatusCodes.INTERNAL_SERVER_ERROR, 'OriginAndSourceValidation::MissingSlugInformation', 'Unable to validate image sources');
+      throw new ImageHandlerError(StatusCodes.INTERNAL_SERVER_ERROR, 'OriginAndSourceValidation::MissingPublicKeyInformation', 'Unable to validate image sources');
     }
 
     // Check if origin mathes
