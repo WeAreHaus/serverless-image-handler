@@ -21,6 +21,7 @@ import { ThumborMapper } from "./thumbor-mapper";
 
 import S3 from 'aws-sdk/clients/s3';
 import { createHmac } from 'crypto';
+import https from 'https';
 import axios from 'axios';
 
 import { DefaultImageRequest, ImageEdits, ImageFormatTypes, ImageHandlerError, ImageHandlerEvent, ImageRequestInfo, Headers, RequestTypes, StatusCodes } from './lib';
@@ -40,6 +41,19 @@ export class ImageRequest {
   private static readonly DEFAULT_EFFORT = 4;
 
   constructor(private readonly s3Client: S3, private readonly secretProvider: SecretProvider) { }
+
+  private static readonly DEFAULT_REDUCTION_EFFORT = 4;
+  private requestData: DefaultImageRequest = null;
+  private imageUrl: URL = null;
+  private apiClient = axios.create({
+    baseURL: 'https://app.webien.io.haus.se/api/',
+    httpsAgent: new https.Agent({
+      rejectUnauthorized: false
+    }),
+    headers: {
+      Authorization: 'Basic aGF1czpsaWZl'
+    }
+  });
 
   /**
    * Determines the output format of an image
@@ -109,15 +123,17 @@ export class ImageRequest {
       let imageRequestInfo: ImageRequestInfo = <ImageRequestInfo>{};
       imageRequestInfo.requestType = this.parseRequestType(event);
       imageRequestInfo.edits = this.parseImageEdits(event, imageRequestInfo.requestType);
-      
+
       let originalImage: OriginalImageInfo;
       imageRequestInfo.imageUrl = imageRequestInfo.requestType === RequestTypes.DEFAULT ? this.parseImageUrl(event) : null;
-      
+
       if (!imageRequestInfo.imageUrl) {
         imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType);
         imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
         originalImage = await this.getOriginalImage(imageRequestInfo.bucket, imageRequestInfo.key);
       } else {
+        this.requestData = this.decodeRequest(event);
+        await this.ensureAuthorized(event);
         originalImage = await this.getOriginalImageFromUrl(imageRequestInfo.imageUrl);
       }
 
@@ -158,54 +174,54 @@ export class ImageRequest {
     }
   }
 
-/**
+  /**
    * Gets the original image from an Amazon S3 bucket.
    * @param bucket The name of the bucket containing the image.
    * @param key The key name corresponding to the image.
    * @returns The original image or an error.
    */
- public async getOriginalImage(bucket: string, key: string): Promise<OriginalImageInfo> {
-  try {
-    const result: OriginalImageInfo = {};
+  public async getOriginalImage(bucket: string, key: string): Promise<OriginalImageInfo> {
+    try {
+      const result: OriginalImageInfo = {};
 
-    const imageLocation = { Bucket: bucket, Key: key };
-    const originalImage = await this.s3Client.getObject(imageLocation).promise();
+      const imageLocation = { Bucket: bucket, Key: key };
+      const originalImage = await this.s3Client.getObject(imageLocation).promise();
 
-    const imageBuffer = Buffer.from(originalImage.Body as Uint8Array);
+      const imageBuffer = Buffer.from(originalImage.Body as Uint8Array);
 
-    if (originalImage.ContentType) {
-      // If using default S3 ContentType infer from hex headers
-      if (['binary/octet-stream', 'application/octet-stream'].includes(originalImage.ContentType)) {
-        result.contentType = this.inferImageType(imageBuffer);
+      if (originalImage.ContentType) {
+        // If using default S3 ContentType infer from hex headers
+        if (['binary/octet-stream', 'application/octet-stream'].includes(originalImage.ContentType)) {
+          result.contentType = this.inferImageType(imageBuffer);
+        } else {
+          result.contentType = originalImage.ContentType;
+        }
       } else {
-        result.contentType = originalImage.ContentType;
+        result.contentType = 'image';
       }
-    } else {
-      result.contentType = 'image';
-    }
 
-    if (originalImage.Expires) {
-      result.expires = new Date(originalImage.Expires).toUTCString();
-    }
+      if (originalImage.Expires) {
+        result.expires = new Date(originalImage.Expires).toUTCString();
+      }
 
-    if (originalImage.LastModified) {
-      result.lastModified = new Date(originalImage.LastModified).toUTCString();
-    }
+      if (originalImage.LastModified) {
+        result.lastModified = new Date(originalImage.LastModified).toUTCString();
+      }
 
-    result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
-    result.originalImage = imageBuffer;
+      result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
+      result.originalImage = imageBuffer;
 
-    return result;
-  } catch (error) {
-    let status = StatusCodes.INTERNAL_SERVER_ERROR;
-    let message = error.message;
-    if (error.code === 'NoSuchKey') {
-      status = StatusCodes.NOT_FOUND;
-      message = `The image ${key} does not exist or the request may not be base64 encoded properly.`;
+      return result;
+    } catch (error) {
+      let status = StatusCodes.INTERNAL_SERVER_ERROR;
+      let message = error.message;
+      if (error.code === 'NoSuchKey') {
+        status = StatusCodes.NOT_FOUND;
+        message = `The image ${key} does not exist or the request may not be base64 encoded properly.`;
+      }
+      throw new ImageHandlerError(status, error.code, message);
     }
-    throw new ImageHandlerError(status, error.code, message);
   }
-}
 
   /**
    * Gets the original image from an Amazon S3 bucket.
@@ -215,6 +231,7 @@ export class ImageRequest {
   public async getOriginalImageFromUrl(imageUrl: string): Promise<OriginalImageInfo> {
     try {
       const result: OriginalImageInfo = {};
+
 
       const imageLocation = { Bucket: bucket, Key: key };
       /*
@@ -261,7 +278,8 @@ export class ImageRequest {
       result.cacheControl = originalImage.CacheControl ?? "max-age=31536000,public";
       // result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
 
-      const originalImage = await axios.get(imageUrl, {responseType: 'arraybuffer'});
+
+      const originalImage = await axios.get(imageUrl, { responseType: 'arraybuffer' });
       const imageBuffer = Buffer.from(originalImage.data as Uint8Array);
       result.contentType = 'image';
       result.cacheControl = 'max-age=31536000,public';
@@ -275,25 +293,21 @@ export class ImageRequest {
         status = StatusCodes.NOT_FOUND;
         message = `The image ${key} does not exist or the request may not be base64 encoded properly.`;
       }
+
       throw new ImageHandlerError(status, error.code, message);
     }
   }
 
   parseImageUrl(event: ImageHandlerEvent): string | null {
     // Decode the image request
-    const decoded = this.decodeRequest(event);
+    const decoded = this.requestData ?? this.decodeRequest(event);
 
     if (decoded?.imageUrl && !this.isValidUrl(decoded.imageUrl)) {
-      throw new ImageHandlerError(
-        StatusCodes.BAD_REQUEST,
-        'ImageUrl::InvalidUrl',
-        `${decoded.imageUrl} is not a valid URL.`
-      );
+      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'ImageUrl::InvalidUrl', `${decoded.imageUrl} is not a valid URL.`);
     }
 
     return decoded?.imageUrl;
   }
-
 
   /**
    * Parses the name of the appropriate Amazon S3 bucket to source the original image from.
@@ -304,7 +318,7 @@ export class ImageRequest {
   public parseImageBucket(event: ImageHandlerEvent, requestType: RequestTypes): string {
     if (requestType === RequestTypes.DEFAULT) {
       // Decode the image request
-      const request = this.decodeRequest(event);
+      const request = this.requestData ?? this.decodeRequest(event);
 
       if (request.bucket !== undefined) {
         // Check the provided bucket against the allowed list
@@ -345,7 +359,7 @@ export class ImageRequest {
    */
   public parseImageEdits(event: ImageHandlerEvent, requestType: RequestTypes): ImageEdits {
     if (requestType === RequestTypes.DEFAULT) {
-      const decoded = this.decodeRequest(event);
+      const decoded = this.requestData ?? this.decodeRequest(event);
       return decoded.edits;
     } else if (requestType === RequestTypes.THUMBOR) {
       const thumborMapping = new ThumborMapper();
@@ -372,7 +386,7 @@ export class ImageRequest {
   public parseImageKey(event: ImageHandlerEvent, requestType: RequestTypes): string {
     if (requestType === RequestTypes.DEFAULT) {
       // Decode the image request and return the image key
-      const { key } = this.decodeRequest(event);
+      const { key } = this.requestData ?? this.decodeRequest(event);
       return key;
     }
 
@@ -625,10 +639,86 @@ export class ImageRequest {
 
   private isValidUrl(url: string): boolean {
     try {
-      new URL(url);
+      this.imageUrl = new URL(url);
       return true;
     } catch (error) {
       return false;
+    }
+  }
+
+  private async validateApiKey() {
+    try {
+      await this.apiClient.get(`validation/${this.requestData.apiKey}`);
+    } catch (error) {
+      const code = 'ApiKeyValidation::ApiKeyValidationError';
+      let status = StatusCodes.FORBIDDEN;
+      let message = 'Invalid API key.';
+
+      if (error.code !== 403) {
+        status = StatusCodes.INTERNAL_SERVER_ERROR;
+        message = 'Unable to validate API key.';
+      }
+
+      throw new ImageHandlerError(status, code, message);
+    }
+
+    throw new ImageHandlerError(StatusCodes.FORBIDDEN, 'ApiKeyValidation::InvalidApiKey', 'The supplied API key is invalid');
+  }
+
+  private async validateOriginAndSource(event: ImageHandlerEvent) {
+    if (!event.headers?.origin) {
+      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingOriginHeader', 'The request is missing the `origin` header');
+    }
+
+    if (!this.requestData.publicKey) {
+      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingSlug', 'The request is missing the property `slug`');
+    }
+
+    let response = null;
+
+    try {
+      response = await this.apiClient.get(`validation/${this.requestData.publicKey}`);
+    } catch (error) {
+      throw new ImageHandlerError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        'OriginAndSourceValidation::UnableToGetValidationData',
+        `Unable to get validation data for slug '${this.requestData.publicKey}': ${error.message}`
+      );
+    }
+
+    if (!response.data.sources || !response.data.origin) {
+      console.error('No origin or image sources in response. Response:', response.data);
+      throw new ImageHandlerError(StatusCodes.INTERNAL_SERVER_ERROR, 'OriginAndSourceValidation::MissingSlugInformation', 'Unable to validate image sources');
+    }
+
+    // Check if origin mathes
+    if (event.headers.origin.indexOf(response.data.origin) === -1) {
+      console.error(`Origin '${event.headers.origin}' is not allowed. Authorized origin is: ${response.data.origin}`);
+      throw new ImageHandlerError(StatusCodes.FORBIDDEN, 'OriginAndSourceValidation::OriginNotAllowed', 'Invalid origin');
+    }
+
+    // Check if image source is valid
+    if (!this.matchSubstrings(this.imageUrl.href, response.data.sources)) {
+      console.error(`Unable to match ${this.imageUrl} with a valid image source for ${event.headers.origin}`);
+      throw new ImageHandlerError(StatusCodes.FORBIDDEN, 'OriginAndSourceValidation::InvalidImageSource', 'Invalid image source');
+    }
+  }
+
+  private matchSubstrings(text: string, strings: string[]) {
+    for (const s of strings) {
+      if (text.indexOf(s) > -1) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async ensureAuthorized(event: ImageHandlerEvent) {
+    if (this.requestData.apiKey) {
+      await this.validateApiKey();
+    } else {
+      await this.validateOriginAndSource(event);
     }
   }
 }
