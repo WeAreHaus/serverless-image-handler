@@ -25,5 +25,6 @@ demo-ui-config.js
 
 # System Files
 **/.DS_Store
+**/.idea
 **/.vscode
 **/.idea
