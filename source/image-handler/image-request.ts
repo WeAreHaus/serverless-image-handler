@@ -525,13 +525,24 @@ export class ImageRequest {
   }
 
   private async validateOriginAndSource(event: ImageHandlerEvent) {
-    if (!event.headers?.origin) {
-      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingOriginHeader', 'The request is missing the `origin` header');
-    }
+
+    /* This section can be configured to better secure traffic.
+     For now, we simply rely on our AWS WAF rules to handle url security.
+     But let's at least check that we have a publicKey.
+     */
 
     if (!this.requestData.publicKey) {
       throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingPublicApiKey', 'The request is missing the property `publicKey`');
     }
+    // if publicKey is available, that's enough for now.
+    return;
+
+
+/*
+    if (!event.headers?.origin) {
+      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingOriginHeader', 'The request is missing the `origin` header');
+    }
+*/
 
     let response = null;
 
