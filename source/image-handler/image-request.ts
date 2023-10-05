@@ -230,6 +230,7 @@ export class ImageRequest {
       const result: OriginalImageInfo = {};
 
 
+
       const imageLocation = { Bucket: bucket, Key: key };
       /*
       const originalImage = await this.s3Client.getObject(imageLocation).promise();
@@ -276,6 +277,7 @@ export class ImageRequest {
       // result.cacheControl = originalImage.CacheControl ?? 'max-age=31536000,public';
 
 
+a8
       const originalImage = await axios.get(imageUrl, { responseType: 'arraybuffer' });
       const imageBuffer = Buffer.from(originalImage.data as Uint8Array);
       result.contentType = 'image';
@@ -290,6 +292,7 @@ export class ImageRequest {
         status = StatusCodes.NOT_FOUND;
         message = `The image ${key} does not exist or the request may not be base64 encoded properly.`;
       }
+
 
       throw new ImageHandlerError(status, error.code, message);
     }
@@ -631,6 +634,102 @@ export class ImageRequest {
           "Signature validation failed."
         );
       }
+    }
+  }
+
+  private isValidUrl(url: string): boolean {
+    try {
+      this.imageUrl = new URL(url);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  private async validateApiKey() {
+    try {
+      await this.apiClient.get(`validation/${this.requestData.apiKey}`);
+    } catch (error) {
+      const code = 'ApiKeyValidation::ApiKeyValidationError';
+      let status = StatusCodes.FORBIDDEN;
+      let message = 'Invalid API key.';
+
+      if (error.code !== 403) {
+        status = StatusCodes.INTERNAL_SERVER_ERROR;
+        message = 'Unable to validate API key.';
+      }
+
+      throw new ImageHandlerError(status, code, message);
+    }
+
+    throw new ImageHandlerError(StatusCodes.FORBIDDEN, 'ApiKeyValidation::InvalidApiKey', 'The supplied API key is invalid');
+  }
+
+  private async validateOriginAndSource(event: ImageHandlerEvent) {
+
+    /* This section can be configured to better secure traffic.
+     For now, we simply rely on our AWS WAF rules to handle url security.
+     But let's at least check that we have a publicKey.
+     */
+
+    if (!this.requestData.publicKey) {
+      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingPublicApiKey', 'The request is missing the property `publicKey`');
+    }
+    // if publicKey is available, that's enough for now.
+    return;
+
+
+/*
+    if (!event.headers?.origin) {
+      throw new ImageHandlerError(StatusCodes.BAD_REQUEST, 'OriginAndSourceValidation::MissingOriginHeader', 'The request is missing the `origin` header');
+    }
+*/
+
+    let response = null;
+
+    try {
+      response = await this.apiClient.get(`validation/${this.requestData.publicKey}`);
+    } catch (error) {
+      throw new ImageHandlerError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        'OriginAndSourceValidation::UnableToGetValidationData',
+        `Unable to get validation data for public API key '${this.requestData.publicKey}': ${error.message}`
+      );
+    }
+
+    if (!response.data.sources || !response.data.origin) {
+      console.error('No origin or image sources in response. Response:', response.data);
+      throw new ImageHandlerError(StatusCodes.INTERNAL_SERVER_ERROR, 'OriginAndSourceValidation::MissingPublicKeyInformation', 'Unable to validate image sources');
+    }
+
+    // Check if origin mathes
+    if (event.headers.origin.indexOf(response.data.origin) === -1) {
+      console.error(`Origin '${event.headers.origin}' is not allowed. Authorized origin is: ${response.data.origin}`);
+      throw new ImageHandlerError(StatusCodes.FORBIDDEN, 'OriginAndSourceValidation::OriginNotAllowed', 'Invalid origin');
+    }
+
+    // Check if image source is valid
+    if (!this.matchSubstrings(this.imageUrl.href, response.data.sources)) {
+      console.error(`Unable to match ${this.imageUrl} with a valid image source for ${event.headers.origin}`);
+      throw new ImageHandlerError(StatusCodes.FORBIDDEN, 'OriginAndSourceValidation::InvalidImageSource', 'Invalid image source');
+    }
+  }
+
+  private matchSubstrings(text: string, strings: string[]) {
+    for (const s of strings) {
+      if (text.indexOf(s) > -1) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async ensureAuthorized(event: ImageHandlerEvent) {
+    if (this.requestData.apiKey) {
+      await this.validateApiKey();
+    } else {
+      await this.validateOriginAndSource(event);
     }
   }
 
