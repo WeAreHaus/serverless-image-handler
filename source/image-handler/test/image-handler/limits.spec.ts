@@ -15,6 +15,7 @@ describe("limits", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "sample-image-001.jpg",
       originalImage: Buffer.alloc(6 * 1024 * 1024),

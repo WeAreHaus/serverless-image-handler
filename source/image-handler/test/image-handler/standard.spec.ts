@@ -40,6 +40,7 @@ describe("standard", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "sample-image-001.jpg",
       originalImage: Buffer.from(

@@ -19,9 +19,7 @@ export interface ImageHandlerEvent {
 
 export interface DefaultImageRequest {
   bucket?: string;
-  imageUrl?: string;
-  apiKey?: string;
-  publicKey?: string;
+  imageUrl: string;
   key: string;
   edits?: ImageEdits;
   outputFormat?: ImageFormatTypes;
@@ -43,10 +41,8 @@ export interface BoxSize {
 
 export interface ImageRequestInfo {
   requestType: RequestTypes;
-  bucket?: string;
+  bucket: string;
   imageUrl?: string;
-  apiKey?: string;
-  publicKey?: string;
   key: string;
   edits?: ImageEdits;
   originalImage: Buffer;

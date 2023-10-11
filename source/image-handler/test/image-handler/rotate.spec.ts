@@ -17,6 +17,7 @@ describe("rotate", () => {
     // Arrange
     const originalImage = fs.readFileSync("./test/image/1x1.jpg");
     const request: ImageRequestInfo = {
+      imageUrl: null,
       requestType: RequestTypes.DEFAULT,
       bucket: "sample-bucket",
       key: "test.jpg",
@@ -39,6 +40,7 @@ describe("rotate", () => {
     // Arrange
     const originalImage = fs.readFileSync("./test/image/1x1.jpg");
     const request: ImageRequestInfo = {
+      imageUrl: null,
       requestType: RequestTypes.DEFAULT,
       bucket: "sample-bucket",
       key: "test.jpg",
@@ -61,6 +63,7 @@ describe("rotate", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "test.jpg",
       edits: {},

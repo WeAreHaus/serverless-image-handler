@@ -18,6 +18,7 @@ describe("format", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "sample-image-001.jpg",
       outputFormat: ImageFormatTypes.PNG,
@@ -40,6 +41,7 @@ describe("format", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "sample-image-001.jpg",
       outputFormat: ImageFormatTypes.WEBP,
@@ -63,6 +65,7 @@ describe("format", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "sample-image-001.jpg",
       edits: { grayscale: true, flip: true },
@@ -90,6 +93,7 @@ describe("modifyImageOutput", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "sample-image-001.png",
       edits: { grayscale: true, flip: true },
@@ -113,6 +117,7 @@ describe("modifyImageOutput", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "sample-image-001.png",
       edits: { grayscale: true, flip: true },
@@ -133,6 +138,7 @@ describe("modifyImageOutput", () => {
     // Arrange
     const request: ImageRequestInfo = {
       requestType: RequestTypes.DEFAULT,
+      imageUrl: null,
       bucket: "sample-bucket",
       key: "sample-image-001.png",
       edits: { grayscale: true, flip: true },
