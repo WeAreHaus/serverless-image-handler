@@ -162,6 +162,7 @@ Every task lists acceptance criteria (AC) and verification (V). Commands assume 
 ### Phase 2: deploy (staging first, production only with Tim's OK)
 
 1. **Deploy a new stack** `wroom-v8` in eu-north-1 with its own CloudFront distribution and no custom domain (test URL is the `*.cloudfront.net` name). The old stack and `4z37kj65dg` stay untouched.
+   - Parameters: `AutoWebPParameter=Yes` (production has AutoWebP on; it also puts the normalized Accept in the cache key), `CorsEnabledParameter=No`, `DeployDemoUIParameter=No`, Origin Shield region per section 12.
    - AC: stack `CREATE_COMPLETE`; replay comparison (phase 1 task 7) passes against the new distribution; Merchamore storefront works locally with `WROOM_URL` pointed at the test distribution.
 2. **Merchamore canary** (Tim's request 2026-10-16): run Merchamore on the new stack before any other site moves. Merchamore picks its CDN at build time from `VITE_WROOM_URL` (`apps/storefront-haus/src/components/wroom-image.tsx:35`), so only Merchamore changes; every other site stays on `wrooom.webien.io` and the old stack.
    1. Set `VITE_WROOM_URL` to the new distribution (`https://<id>.cloudfront.net/`, or a new alias such as `wroom-next.webien.io` if webien.io DNS is available) for the Merchamore staging build; check start page, product page and cart images at 1x and 2x widths.
