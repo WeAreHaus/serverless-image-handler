@@ -75,7 +75,11 @@ def main():
         per_ip_max[ip] = max(per_ip_max[ip], n)
     top = per_ip_total.most_common(10)
     out = {k: [[list(a) if isinstance(a, tuple) else a, n] for a, n in v.most_common(25)] for k, v in agg.items()}
-    out["bov_top_ips_total_and_max_per_minute"] = [[i, n, per_ip_max[i]] for i, n in top]
+    # Client IPs are personal data: only a salted hash prefix leaves this script.
+    salt = os.urandom(16)
+    out["bov_top_ips_total_and_max_per_minute"] = [
+        [__import__("hashlib").sha256(salt + i.encode()).hexdigest()[:10], n, per_ip_max[i]] for i, n in top
+    ]
     out["bov_ips_over_1000"] = sum(1 for n in per_ip_total.values() if n > 1000)
     out["bov_ip_count"] = len(per_ip_total)
     with open(OUT, "w") as f:
