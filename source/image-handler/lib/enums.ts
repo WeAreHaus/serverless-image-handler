@@ -8,7 +8,9 @@ export enum StatusCodes {
   NOT_FOUND = 404,
   REQUEST_TOO_LONG = 413,
   INTERNAL_SERVER_ERROR = 500,
+  BAD_GATEWAY = 502,
   TIMEOUT = 503,
+  GATEWAY_TIMEOUT = 504,
 }
 
 export enum RequestTypes {

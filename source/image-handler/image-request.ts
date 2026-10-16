@@ -23,6 +23,7 @@ import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import utc from "dayjs/plugin/utc";
 import { QueryParamMapper } from "./query-param-mapper";
+import { contentTypeFromFormatEdit, getOriginalImageFromUrl, isUrlRequest, parseImageUrl } from "./url-image-source";
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
 
@@ -115,12 +116,22 @@ export class ImageRequest {
       imageRequestInfo.secondsToExpiry = secondsToExpiry;
 
       imageRequestInfo.requestType = this.parseRequestType(event);
-      imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
-      imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType, imageRequestInfo.bucket);
+      // Haus (Wroom): a default request with `imageUrl` is fetched over HTTP instead of from S3.
+      const imageUrl =
+        imageRequestInfo.requestType === RequestTypes.DEFAULT && isUrlRequest(this.decodeRequest(event))
+          ? parseImageUrl(this.decodeRequest(event))
+          : undefined;
+      if (imageUrl === undefined) {
+        imageRequestInfo.bucket = this.parseImageBucket(event, imageRequestInfo.requestType);
+        imageRequestInfo.key = this.parseImageKey(event, imageRequestInfo.requestType, imageRequestInfo.bucket);
+      }
       imageRequestInfo.edits = this.parseImageEdits(event, imageRequestInfo.requestType);
       imageRequestInfo.edits = this.parseQueryParamEdits(event, imageRequestInfo.edits);
 
-      const originalImage = await this.getOriginalImage(imageRequestInfo.bucket, imageRequestInfo.key);
+      const originalImage =
+        imageUrl === undefined
+          ? await this.getOriginalImage(imageRequestInfo.bucket, imageRequestInfo.key)
+          : await getOriginalImageFromUrl(imageUrl);
       imageRequestInfo = { ...imageRequestInfo, ...originalImage };
 
       imageRequestInfo.headers = this.parseImageHeaders(event, imageRequestInfo.requestType);
@@ -148,6 +159,12 @@ export class ImageRequest {
 
       // Fix quality for Thumbor and Custom request type if outputFormat is different from quality type.
       this.fixQuality(imageRequestInfo);
+
+      // Haus (Wroom): a format edit without toFormat or AutoWebP changes the encoding, so label it accordingly.
+      if (imageUrl !== undefined && !imageRequestInfo.outputFormat) {
+        imageRequestInfo.contentType =
+          contentTypeFromFormatEdit(imageRequestInfo.edits) ?? imageRequestInfo.contentType;
+      }
 
       return imageRequestInfo;
     } catch (error) {

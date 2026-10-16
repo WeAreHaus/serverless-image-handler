@@ -52,6 +52,9 @@ export interface S3HeadObjectResult {
 export interface DefaultImageRequest {
   bucket?: string;
   key: string;
+  // Haus (Wroom): URL source, see url-image-source.ts. The WordPress plugin can send `imageUrl: false`.
+  imageUrl?: string | boolean;
+  publicKey?: string;
   edits?: ImageEdits;
   outputFormat?: ImageFormatTypes;
   effort?: number;

@@ -842,19 +842,18 @@ function processQueryParams(querystring) {
             "EnableAcceptEncodingBrotli": false,
             "EnableAcceptEncodingGzip": false,
             "HeadersConfig": {
-              "HeaderBehavior": "whitelist",
-              "Headers": {
-                "Fn::If": [
-                  "CommonResourcesAutoWebPCondition7119C768",
-                  [
-                    "origin",
+              "Fn::If": [
+                "CommonResourcesAutoWebPCondition7119C768",
+                {
+                  "HeaderBehavior": "whitelist",
+                  "Headers": [
                     "accept",
                   ],
-                  [
-                    "origin",
-                  ],
-                ],
-              },
+                },
+                {
+                  "HeaderBehavior": "none",
+                },
+              ],
             },
             "QueryStringsConfig": {
               "QueryStringBehavior": "all",
@@ -1093,23 +1092,31 @@ function processQueryParams(querystring) {
           "Comment": "Image Handler Distribution for Dynamic Image Transformation for Amazon CloudFront",
           "CustomErrorResponses": [
             {
-              "ErrorCachingMinTTL": 600,
+              "ErrorCachingMinTTL": 60,
+              "ErrorCode": 400,
+            },
+            {
+              "ErrorCachingMinTTL": 120,
+              "ErrorCode": 404,
+            },
+            {
+              "ErrorCachingMinTTL": 60,
               "ErrorCode": 500,
             },
             {
-              "ErrorCachingMinTTL": 600,
+              "ErrorCachingMinTTL": 60,
               "ErrorCode": 501,
             },
             {
-              "ErrorCachingMinTTL": 600,
+              "ErrorCachingMinTTL": 60,
               "ErrorCode": 502,
             },
             {
-              "ErrorCachingMinTTL": 600,
+              "ErrorCachingMinTTL": 60,
               "ErrorCode": 503,
             },
             {
-              "ErrorCachingMinTTL": 600,
+              "ErrorCachingMinTTL": 60,
               "ErrorCode": 504,
             },
           ],
@@ -3087,6 +3094,90 @@ function handler(event) {
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "BackEndWroomAlarmsLambdaDurationP99387290C1": {
+      "Properties": {
+        "AlarmDescription": "Wroom image handler: p99 duration above 5 s for 15 minutes.",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "BackEndImageHandlerLambdaFunctionADEF7FF2",
+            },
+          },
+        ],
+        "EvaluationPeriods": 3,
+        "ExtendedStatistic": "p99",
+        "MetricName": "Duration",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Tags": [
+          {
+            "Key": "SolutionId",
+            "Value": "S0ABC",
+          },
+        ],
+        "Threshold": 5000,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "BackEndWroomAlarmsLambdaErrorsD15FCF1D": {
+      "Properties": {
+        "AlarmDescription": "Wroom image handler: Lambda errors (crashes, not 4xx/5xx responses).",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "BackEndImageHandlerLambdaFunctionADEF7FF2",
+            },
+          },
+        ],
+        "EvaluationPeriods": 3,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "SolutionId",
+            "Value": "S0ABC",
+          },
+        ],
+        "Threshold": 10,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "BackEndWroomAlarmsLambdaThrottles0459E5BD": {
+      "Properties": {
+        "AlarmDescription": "Wroom image handler: Lambda throttles.",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "BackEndImageHandlerLambdaFunctionADEF7FF2",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Throttles",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Tags": [
+          {
+            "Key": "SolutionId",
+            "Value": "S0ABC",
+          },
+        ],
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
     },
     "CommonResourcesCustomResourcesCustomResourceAnonymousMetric51363F57": {
       "DeletionPolicy": "Delete",

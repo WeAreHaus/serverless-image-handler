@@ -90,12 +90,16 @@ export class ApiGatewayArchitecture {
       enableLogging: true,
       logBucket: props.logsBucket,
       logFilePrefix: "api-cloudfront/",
+      // Haus (Wroom): short error caching (upstream caches 5xx for 10 minutes). A 404 for an image that is still
+      // being uploaded or generated clears within 2 minutes, a transient 5xx within 1 minute.
       errorResponses: [
-        { httpStatus: 500, ttl: Duration.minutes(10) },
-        { httpStatus: 501, ttl: Duration.minutes(10) },
-        { httpStatus: 502, ttl: Duration.minutes(10) },
-        { httpStatus: 503, ttl: Duration.minutes(10) },
-        { httpStatus: 504, ttl: Duration.minutes(10) },
+        { httpStatus: 400, ttl: Duration.minutes(1) },
+        { httpStatus: 404, ttl: Duration.minutes(2) },
+        { httpStatus: 500, ttl: Duration.minutes(1) },
+        { httpStatus: 501, ttl: Duration.minutes(1) },
+        { httpStatus: 502, ttl: Duration.minutes(1) },
+        { httpStatus: 503, ttl: Duration.minutes(1) },
+        { httpStatus: 504, ttl: Duration.minutes(1) },
       ],
     };
 

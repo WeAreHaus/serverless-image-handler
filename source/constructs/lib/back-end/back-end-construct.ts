@@ -28,6 +28,7 @@ import { ConditionAspect } from "../../utils/aspects";
 import { EventSourceMappingResolver } from "../common-resources/event-source-mapping-resolver-construct";
 import { OperationalInsightsDashboard } from "../dashboard/ops-insights-dashboard";
 import { Dashboard } from "aws-cdk-lib/aws-cloudwatch";
+import { WroomAlarms } from "./wroom-alarms";
 
 export interface BackEndProps extends SolutionConstructProps {
   readonly solutionVersion: string;
@@ -185,11 +186,17 @@ export class BackEnd extends Construct {
 
     // This override supersedes the typed allowList above: accept is in the cache key only when AutoWebP is on.
     // Keep in sync with Accept normalization in image-handler/cloudfront-function-handlers/apig-request-modifier.js.
+    // Haus (Wroom): `origin` is left out of the cache key (upstream keeps it). CORS is off, or a fixed CORS_ORIGIN,
+    // so the response never depends on Origin and every Origin value only split the cache.
     const cachePolicyResource = this.node.findChild("CachePolicy").node.defaultChild as CfnResource;
     cachePolicyResource.addOverride(
-      "Properties.CachePolicyConfig.ParametersInCacheKeyAndForwardedToOrigin.HeadersConfig.Headers",
+      "Properties.CachePolicyConfig.ParametersInCacheKeyAndForwardedToOrigin.HeadersConfig",
       {
-        "Fn::If": [props.conditions.autoWebPCondition.logicalId, ["origin", "accept"], ["origin"]],
+        "Fn::If": [
+          props.conditions.autoWebPCondition.logicalId,
+          { HeaderBehavior: "whitelist", Headers: ["accept"] },
+          { HeaderBehavior: "none" },
+        ],
       }
     );
 
@@ -302,5 +309,7 @@ export class BackEnd extends Construct {
     this.operationalDashboard = operationalInsightsDashboard.dashboard;
 
     Aspects.of(operationalInsightsDashboard).add(new ConditionAspect(props.deployCloudWatchDashboard));
+
+    new WroomAlarms(this, "WroomAlarms", { imageHandlerLambdaFunction });
   }
 }
