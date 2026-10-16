@@ -163,20 +163,26 @@ Every task lists acceptance criteria (AC) and verification (V). Commands assume 
 
 1. **Deploy a new stack** `wroom-v8` in eu-north-1 with its own CloudFront distribution and no custom domain (test URL is the `*.cloudfront.net` name). The old stack and `4z37kj65dg` stay untouched.
    - AC: stack `CREATE_COMPLETE`; replay comparison (phase 1 task 7) passes against the new distribution; Merchamore storefront works locally with `WROOM_URL` pointed at the test distribution.
-2. **Prepare the alias move.** `E3K100LLRITAXV` is a resource of the old CDK stack (its origin id is CDK-generated), so changing its origin and later deleting the old stack would delete the production distribution. Moving the alias is the only switch path.
+2. **Merchamore canary** (Tim's request 2026-10-16): run Merchamore on the new stack before any other site moves. Merchamore picks its CDN at build time from `VITE_WROOM_URL` (`apps/storefront-haus/src/components/wroom-image.tsx:35`), so only Merchamore changes; every other site stays on `wrooom.webien.io` and the old stack.
+   1. Set `VITE_WROOM_URL` to the new distribution (`https://<id>.cloudfront.net/`, or a new alias such as `wroom-next.webien.io` if webien.io DNS is available) for the Merchamore staging build; check start page, product page and cart images at 1x and 2x widths.
+   2. Same change for the Merchamore production build (production deploy, Tim's OK).
+   3. Run for at least 7 days: compare Merchamore miss latency, 4xx/5xx and image errors in the browser console against section 4, using the new distribution's access logs and `analyze.py`.
+   - AC: no broken images on the Merchamore storefront; 5xx under 0.5 % of Merchamore requests; miss p50 not worse than today (0.47 s).
+   - Rollback: set `VITE_WROOM_URL` back to `https://wrooom.webien.io/` and redeploy the storefront (one build, minutes). The old stack is never touched in this step.
+3. **Prepare the alias move.** `E3K100LLRITAXV` is a resource of the old CDK stack (its origin id is CDK-generated), so changing its origin and later deleting the old stack would delete the production distribution. Moving the alias is the only switch path.
    1. Find who controls DNS for `webien.io` (not Loopia; haus.se is).
    2. Attach the existing ACM certificate (`arn:aws:acm:us-east-1:035230334169:certificate/d409347a…`) to the new distribution.
    3. Apply the hand-made settings to the new distribution: viewer policy https-only, log prefix, WAF web ACL if Tim keeps it (phase 0 task 2).
    4. Create the TXT record `_wrooom.webien.io` pointing at the new distribution's `*.cloudfront.net` name (required by `associate-alias`).
    5. Smoke test: `curl -s -o /dev/null -w '%{http_code} %{content_type}\n' --resolve wrooom.webien.io:443:<IP of new distribution> https://wrooom.webien.io/<known path>` returns `200 image/webp`.
    - AC: all five steps done and the smoke test passes for 20 sampled paths.
-3. **Switch**, at a low-traffic hour (Sunday 03:00 to 05:00 CET):
+4. **Switch all other sites**, after the Merchamore canary passes, at a low-traffic hour (Sunday 03:00 to 05:00 CET):
    1. Save `aws cloudfront get-distribution-config --id E3K100LLRITAXV > backup-E3K100LLRITAXV-<date>.json` and the new distribution's config, read both back.
    2. `aws cloudfront associate-alias --target-distribution-id <new id> --alias wrooom.webien.io`, then point the `wrooom.webien.io` DNS record at the new distribution if it is not an alias to CloudFront already.
    - AC: `curl -sI https://wrooom.webien.io/<known path>` returns 200 webp and `x-amz-cf-id` from the new distribution; 5xx rate under 2 % excluding known 404 sources for 24 h; Lambda concurrency stays under 400 during the cold-cache period (new cache key means every object is generated once more; about 50 k distinct paths a day).
    - Rollback: move the alias back (`associate-alias --target-distribution-id E3K100LLRITAXV`, TXT record pointed back) and restore DNS. 5 to 10 minutes to propagate. The old stack and distribution stay unchanged and running for 30 days.
-4. **Template, rko13a, rlcaqk distributions**: zero traffic. Ask Tim whether to retire them; if they stay, move their aliases to new distributions the same way (their current managed policy ignores Accept).
-5. **Old stack removal**: after 30 days without rollback, and only with Tim's OK (deletes resources). Before deleting, check which resources it owns (needs phase 0 task 5), and whether the logs bucket `serverless-image-handler-logs-07b19942` is retained or deleted with the stack; keep the logs Tim's retention decision requires.
+5. **Template, rko13a, rlcaqk distributions**: zero traffic. Ask Tim whether to retire them; if they stay, move their aliases to new distributions the same way (their current managed policy ignores Accept).
+6. **Old stack removal**: after 30 days without rollback, and only with Tim's OK (deletes resources). Before deleting, check which resources it owns (needs phase 0 task 5), and whether the logs bucket `serverless-image-handler-logs-07b19942` is retained or deleted with the stack; keep the logs Tim's retention decision requires.
 
 ## 10. Risks for existing customers
 
@@ -207,4 +213,4 @@ Every task lists acceptance criteria (AC) and verification (V). Commands assume 
 5. Retire `template`, `rko13a`, `rlcaqk` distributions?
 6. Extend the `wroom` read-only policy (phase 0 task 5)?
 7. Origin Shield region: eu-central-1 or eu-west-2 (phase 1 task 5)?
-8. Who controls DNS for `webien.io` (phase 2 task 2)?
+8. Who controls DNS for `webien.io` (phase 2 task 3)?
