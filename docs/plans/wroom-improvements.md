@@ -1,6 +1,6 @@
 # Wroom improvement plan (2026-10-16)
 
-Status: PLAN ONLY. Nothing is deployed, nothing in AWS is changed, nothing is pushed. Implementation starts after Tim's OK.
+Status: option B approved by Tim 2026-10-16. Phase 1 (code) is implemented on branch `feat/wroom-v8`. Phase 0 and phase 2 change production and wait for Tim's decisions in section 12. Nothing is deployed and nothing in AWS is changed.
 
 Wroom = `wrooom.webien.io`, the Haus image CDN: CloudFront, then API Gateway `4z37kj65dg` (eu-north-1, stage `/image`), then Lambda `ServerlessImageHandler-BackEndImageHandlerLambdaFu-8W9Z7VqvwHCx` (sharp). Requests are base64 JSON `{"imageUrl", "publicKey", "edits"}`; the Lambda downloads `imageUrl` with axios and resizes.
 
@@ -140,15 +140,23 @@ Every task lists acceptance criteria (AC) and verification (V). Commands assume 
    - V: `curl -sI -H "Accept: <variant>" -H "Accept-Encoding: <variant>" https://<test-host>/<path> | grep -i x-cache` for each variant, second and later requests show `Hit`.
 4. **Error caching.** 404 cached 120 s, 400 cached 60 s, 500 to 504 cached 60 s (today 600 s; upstream v8.1.2 also 600 s), via the distribution's error responses. Short 404 caching so an image requested before its upload or preview generation finished (WordPress srcset, Vendure previews, Merchamore deploys) appears within two minutes. These values deviate from upstream; list them under upstream deviations.
    - AC: a request for a missing source returns 404 with `x-cache: Error from cloudfront` on repeat; the same path returns 200 within 2 minutes after the source appears; a transient 502 clears within a minute.
-5. **Origin Shield.** Region undecided: eu-central-1 (Frankfurt) or eu-west-2 (London, which the reviewer reads from AWS's recommended-region table for an eu-north-1 origin). Check the AWS table at deploy time and decide (section 11).
+5. **Origin Shield.** Region undecided: eu-central-1 (Frankfurt) or eu-west-2 (London, which the reviewer reads from AWS's recommended-region table for an eu-north-1 origin). Check the AWS table at deploy time and decide (section 12).
    - AC: `OriginShield.Enabled: true` on the origin; tasks 3 and 5 together cut Lambda invocations per million viewer requests by about 20 to 25 % within a week (section 4 point 5 measures both effects together).
    - V: `aws cloudfront get-distribution-config --id <id> --query 'DistributionConfig.Origins.Items[0].OriginShield'`; Lambda `Invocations` vs CloudFront `Requests` daily.
-6. **Observability.** Keep upstream's ops dashboard; add alarms on CloudFront `5xxErrorRate` above 5 % for 30 minutes, Lambda `Errors`, Lambda p99 duration above 5 s, and API Gateway 5xx. Alarm target decided by Tim (email or Slack).
+6. **Observability.** Keep upstream's ops dashboard; add alarms on Lambda `Errors`, throttles and p99 duration above 5 s (implemented in `source/constructs/lib/back-end/wroom-alarms.ts`, no actions yet). CloudFront `5xxErrorRate` exists only in us-east-1, so its alarm cannot live in the eu-north-1 stack; create it in us-east-1 together with the additional metrics (phase 0 task 3). Alarm target decided by Tim (email or Slack).
    - AC: alarms exist and fire in a test (set threshold low on the test stack).
 7. **Replay comparison tool** (`docs/plans/wroom-tools/replay.py`): take 2 000 distinct real request paths from the logs, spread over all 158 hosts, and request each from old and new endpoints with `Accept: image/webp` and `Accept: */*`.
    - Sample must include: SVG, animated GIF, BMP or ICO sources, mislabelled content types, Hemglass `resize` without width or height, string widths, `blur`, `extract`.
-   - AC: same status for at least 99 % (differences only where intended: 404, 400 or 502 instead of 500; 413 `TooLargeImageException` where today API Gateway gives 502 for outputs over 6 MB); for 200s, same output format and dimensions, byte size within 15 %. Intended difference: animated GIF sources now give animated WebP instead of a still image (v8.1.2 sets `animated` from the detected type).
+   - AC: same status for at least 99 % (differences only where intended: 404, 400 or 502 instead of 500; 413 `TooLargeImageException` where today API Gateway gives 502 for outputs over 6 MB); for 200s, same output format and dimensions, byte size within 15 %. Animated GIF: v8.1.2 sets `animated` from the content type after the output format is chosen, so with `toFormat: webp` or AutoWebP the output is one frame, as in the 6.x fork. Only a GIF kept as GIF (no format change, `Accept: */*`) is now animated where the fork returned one frame.
    - V: the tool prints a summary and a CSV of differences.
+   - Implemented: sampler `docs/plans/wroom-tools/sample_paths.py`, replay `source/image-handler/scripts/wroom-replay.ts` (live Wroom vs this code run locally through `index.handler`).
+   - Result 2026-10-16 (570 paths over 115 image hosts plus 40 error shapes, each with `Accept: image/webp` and `*/*`, 1 140 pairs):
+     1. 919 identical (status, format, dimensions, size within 15 %), 47 intended status changes (26 source 404 now 404, 12 non-images now 400 `InstantiationError`, 4 unreachable sources now 502, 3 refused now 400, 2 `imageUrl: false` now 400).
+     2. 124 differ only in byte size (same format and dimensions): sharp 0.35 output is smaller for 92 and larger for 32, median 0.81 of today's size.
+     3. 42 differ by 1 pixel on one side (`fit: outside` rounding in sharp 0.35, for example 450x300 becomes 451x300).
+     4. 8 return 200 where live returns 500: 2 are a fix (`gym80.se` file names with `ä`, which axios refused with `ERR_UNESCAPED_CHARACTERS`); 6 are local-network artifacts (`*.haus.se` staging sources that answer 401 to the Lambda but not to the office network, and `hemglass.se.test`, which only resolves on a developer machine). From the Lambda these give 400 instead of 500.
+     5. Content type: live answers `content-type: image` for every `*/*` response; the new code sends the real type (`image/jpeg`, `image/png`, `image/webp`).
+   - Verdict: no unintended status or format change. The 15 % size rule is too strict across sharp versions; size is informational only.
 8. **Stored result cache (finding 5): deferred.** With Origin Shield and a 365-day max TTL the expected gain is small (hit ratio already 94 %). Re-measure two weeks after go-live; if misses for already-seen paths stay above 10 %, add an S3 result cache keyed on the request path.
 
 ### Phase 2: deploy (staging first, production only with Tim's OK)
@@ -180,9 +188,17 @@ Every task lists acceptance criteria (AC) and verification (V). Commands assume 
 6. **Open proxy stays open by choice** (decision 2026-10-16): any URL is still fetched, including loopback and private addresses. Only the 25 s timeout and Lambda's memory bound the cost of one request. Watch Lambda invocations per day for abuse.
 7. **Cold cache after switch**: changing the cache key empties the effective cache once. Expect about 1 day of higher latency on first views (miss p50 0.5 s) and higher Lambda load.
 8. **Hand-made distribution settings** (alias, certificate, WAF, log prefix) could be reverted by a CloudFormation update of the old stack. Do not update the old stack; build the new one and move traffic.
-9. **Animated GIFs** become animated WebP (see phase 1 task 7). Check with the customers that serve GIFs before the switch.
+9. **Animated GIFs** stay one frame when converted to WebP (as today). Only GIF to GIF requests without a format change become animated (see phase 1 task 7).
 
-## 11. Open questions for Tim
+## 11. Upstream deviations (keep when rebasing onto later upstream versions)
+
+1. `source/image-handler/url-image-source.ts` and its wiring in `image-request.ts` `setup()`: `imageUrl` requests fetched over HTTP, `publicKey` presence check, source status mapping, content type resolution, format-edit content type.
+2. `lib/enums.ts`: `BAD_GATEWAY` 502 and `GATEWAY_TIMEOUT` 504. `lib/interfaces.ts`: `imageUrl`, `publicKey` on `DefaultImageRequest`.
+3. Cache policy: `origin` removed from the cache key (`back-end-construct.ts`).
+4. Error caching: 400 60 s, 404 120 s, 5xx 60 s (`api-gateway-architecture.ts`; upstream 5xx 600 s, no 4xx entries).
+5. Lambda alarms (`wroom-alarms.ts`).
+
+## 12. Open questions for Tim
 
 1. OK for option B?
 2. Who tells BoV, and with what text? (Draft can follow.)
