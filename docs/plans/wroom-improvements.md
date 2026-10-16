@@ -16,7 +16,7 @@ Wroom = `wrooom.webien.io`, the Haus image CDN: CloudFront, then API Gateway `4z
 ## 2. What the code is
 
 1. Upstream base: v6.2.2 (`29fe1e7`). Fork diff (`git diff 29fe1e7 453e741`) is 10 files, +274/-8. The feature is `getOriginalImageFromUrl` and `parseImageUrl` in `source/image-handler/image-request.ts`.
-2. `getOriginalImageFromUrl` (`source/image-handler/image-request.ts:232`): `axios.get(imageUrl)` with no host allow list, no timeout, no size limit, no content-type check, any scheme or address the URL parser accepts. Content type is hard-coded to `"image"` and cache-control to one year.
+2. `getOriginalImageFromUrl` (`source/image-handler/image-request.ts:232`): `axios.get(imageUrl)` with no timeout, no size limit, no content-type check, any scheme or address the URL parser accepts. Content type is hard-coded to `"image"` and cache-control to one year.
 3. Any axios error becomes HTTP 500 (`image-request.ts:247-250`). A source 404 is returned as 500 with body `{"code":"ERR_BAD_REQUEST","message":"Request failed with status code 404"}` (confirmed live).
 4. `axios` is not a dependency of `source/image-handler/package.json` (it is only in `source/constructs/package.json`). A clean checkout does not compile: 14 of 30 test suites fail with `TS2307: Cannot find module 'axios'`. With `axios@1.5.1` installed by hand: 29 of 30 suites pass, 250 of 257 tests; the 7 failures in `test/image-request/setup.spec.ts` are expectation drift (`imageUrl: null`, `headers: undefined` now on the result). There are no tests for the URL path. Toolchain: Node 22.22.2, npm 10.9.7.
 5. Lambda runtime in the construct is `NODEJS_16_X` (`source/constructs/lib/back-end/back-end-construct.ts:91`), AWS SDK v2, sharp 0.32.6.
@@ -120,14 +120,13 @@ Every task lists acceptance criteria (AC) and verification (V). Commands assume 
 1. **Rebase base.** Branch from `v8.1.2`. Keep upstream files unchanged where possible; Haus code goes in new files.
    - AC: `cd source/image-handler && npm ci && npm test` green on a clean clone; `cd source/constructs && npm ci && npm test` green.
 2. **URL source module** (`source/image-handler/url-image-source.ts`), used when the request has `imageUrl`:
-   1. Host allow list from an environment variable or SSM parameter, seeded from 30 days of logs (158 hosts in 7 days) plus `*.haus.se` for staging. Mode `log` (allow and log would-block) first, then `enforce`.
-   2. HTTPS only (HTTP allowed only for hosts on the list that need it). Block loopback, link-local, private and metadata addresses after DNS resolution.
-   3. Use Node 24 `fetch` with a 10 s timeout and a 25 MB response cap (no axios dependency).
-   4. Require an image content type, else 415. Infer the real type from magic bytes (upstream `inferImageType`) so responses never say `content-type: image`.
-   5. Map source status: 404 and 410 to 404, other 4xx to 400, 5xx and network errors to 502, timeout to 504.
-   6. `imageUrl: false`, empty or invalid: 400 `ImageUrl::Missing` without falling back to S3 (unless a source bucket is configured on purpose).
-   7. Keep today's rule that `publicKey` must be present (400 if missing), so existing behaviour does not change; real key checks are out of scope.
-   - AC: unit tests for each case above (allowed host, blocked host, 127.0.0.1, `http://169.254.169.254`, redirect to a private address, timeout, oversize, 404 source, non-image body, `imageUrl: false`, string width `"300"`, `webp` edit without `toFormat`). Coverage of the new file at least 90 %.
+   1. Any public host stays allowed (no host allow list, by decision 2026-10-16). HTTP and HTTPS both allowed as today. Block loopback, link-local, private and metadata addresses after DNS resolution and on every redirect.
+   2. Use Node 24 `fetch` with a 10 s timeout and a 25 MB response cap (no axios dependency).
+   3. Require an image content type, else 415. Infer the real type from magic bytes (upstream `inferImageType`) so responses never say `content-type: image`.
+   4. Map source status: 404 and 410 to 404, other 4xx to 400, 5xx and network errors to 502, timeout to 504.
+   5. `imageUrl: false`, empty or invalid: 400 `ImageUrl::Missing` without falling back to S3 (unless a source bucket is configured on purpose).
+   6. Keep today's rule that `publicKey` must be present (400 if missing), so existing behaviour does not change; real key checks are out of scope.
+   - AC: unit tests for each case above (public host, 127.0.0.1, `10.0.0.1`, `http://169.254.169.254`, redirect to a private address, timeout, oversize, 404 source, non-image body, `imageUrl: false`, string width `"300"`, `webp` edit without `toFormat`). Coverage of the new file at least 90 %.
    - V: `npx jest test/url-image-source.spec.ts --coverage`.
 3. **Cache key.**
    1. Use upstream's viewer-request CloudFront function: Accept normalized to `image/webp` or empty; query strings reduced to the allow list.
@@ -162,10 +161,10 @@ Every task lists acceptance criteria (AC) and verification (V). Commands assume 
 
 1. **WordPress sites** (hallarna, c4shopping, bergvik, avionshopping, valbokopcentrum, grandsamarkand, ingelstashopping, elinsesplanad, member24, birgerjarl, and more): rely on string widths, the `webp` edit without `toFormat`, `blur`, and AutoWebP. All covered by v8.1.2, verified by the replay. Missing images change from 500 to 404, which WordPress handles the same way.
 2. **BoV**: the loop continues until their client is fixed; with the new 404 caching it costs one cached 404 per edge per hour instead of a cached 500 per 10 minutes, but the request volume stays.
-3. **Hemglass**: largest by bytes, sources are large (miss p90 1.9 s). Local `.test` sites using `127.0.0.1` sources will get 403 once the allow list enforces. Tell the Hemglass developers to use staging Wroom or a local image server.
+3. **Hemglass**: largest by bytes, sources are large (miss p90 1.9 s). Local `.test` sites using `127.0.0.1` sources will get 403 from the private-address block. Tell the Hemglass developers to use staging Wroom or a local image server.
 4. **Livv**: 3 089 errors in the week on `ecom.livv.se`; find the cause before the switch so it is not blamed on the new version.
 5. **Merchamore**: small volume, covered by the replay and a local storefront run. The storefront width fixes from the Merchamore review are separate work in that repo.
-6. **Unknown hosts**: the allow list starts in log mode; any host seen in the log output during the first two weeks is added before enforcing.
+6. **Open proxy stays open by choice**: any public image URL is still fetched. Cost exposure is limited by the timeout, the 25 MB cap and the content-type check, not by host. Watch Lambda invocations per day for abuse.
 7. **Cold cache after switch**: changing the cache key empties the effective cache once. Expect about 1 day of higher latency on first views (miss p50 0.5 s) and higher Lambda load.
 8. **Hand-made distribution settings** (alias, certificate, WAF, log prefix) could be reverted by a CloudFormation update of the old stack. Do not update the old stack; build the new one and move traffic.
 
