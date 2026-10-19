@@ -1,6 +1,10 @@
 # Wroom improvement plan (2026-10-16)
 
-Status: option B approved by Tim 2026-10-16. Phase 1 (code) is implemented on branch `feat/wroom-v8`. Phase 0 and phase 2 change production and wait for Tim's decisions in section 12. Nothing is deployed and nothing in AWS is changed.
+Status 2026-10-19: option B approved by Tim 2026-10-16. Phase 1 is on branch `feat/wroom-v8`. Phase 2 task 1 is done: stack `wroom-v8` (eu-north-1) is deployed with its own distribution, `https://dc0gkye1cy5bk.cloudfront.net/`, and no site uses it yet. The old stack and every other distribution are unchanged.
+
+Confirmed with the extended read policy (2026-10-19): the old stack `ServerlessImageHandler` was created from v6.0.0 on 2022-09-20 and last updated by CloudFormation on 2022-09-21. The Lambda code was changed by hand on 2022-10-03 12:57 UTC (commit `9df624a`, same minute) and runs on `nodejs14.x`. Lambda env: `AUTO_WEBP=Yes`, `CORS_ENABLED=No`, `SOURCE_BUCKETS=haus-tech`.
+
+Verification of `wroom-v8`: all 386 Merchamore image paths from 7 days of logs, each with two Accept values, old vs new: 752 of 772 identical, 14 one pixel taller (160x213 becomes 160x214), 6 size-only. The full 570-path sample, deployed vs local run: identical except 9 local-network artifacts. The Merchamore start page (25 images) and a product page loaded with every image swapped to the new address in Chrome, none broken. Accept normalization works: a Chrome-style Accept hits the object cached by `Accept: image/webp`.
 
 Wroom = `wrooom.webien.io`, the Haus image CDN: CloudFront, then API Gateway `4z37kj65dg` (eu-north-1, stage `/image`), then Lambda `ServerlessImageHandler-BackEndImageHandlerLambdaFu-8W9Z7VqvwHCx` (sharp). Requests are base64 JSON `{"imageUrl", "publicKey", "edits"}`; the Lambda downloads `imageUrl` with axios and resizes.
 

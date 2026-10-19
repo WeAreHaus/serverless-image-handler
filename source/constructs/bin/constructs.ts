@@ -5,20 +5,22 @@ import { App, DefaultStackSynthesizer } from "aws-cdk-lib";
 import { ServerlessImageHandlerStack } from "../lib/serverless-image-stack";
 import { ManagementStack, ManagementStackProps } from "../lib/v8/stacks";
 
-// CDK and default deployment
-let synthesizer = new DefaultStackSynthesizer({
-  generateBootstrapVersionRule: false,
-});
-
 // Solutions pipeline deployment
 const { DIST_OUTPUT_BUCKET, SOLUTION_NAME, VERSION, SOLUTION_ID } = process.env;
 const { PUBLIC_ECR_REGISTRY } = process.env;
-if (DIST_OUTPUT_BUCKET && SOLUTION_NAME && VERSION)
-  synthesizer = new DefaultStackSynthesizer({
-    generateBootstrapVersionRule: false,
-    fileAssetsBucketName: `${DIST_OUTPUT_BUCKET}-\${AWS::Region}`,
-    bucketPrefix: `${SOLUTION_NAME}/${VERSION}/`,
-  });
+
+// Haus (Wroom): one synthesizer per stack. A shared instance merges both stacks' assets into one manifest, so
+// deploying only v7-Stack also tried to publish the v8 container image.
+const createSynthesizer = () =>
+  DIST_OUTPUT_BUCKET && SOLUTION_NAME && VERSION
+    ? new DefaultStackSynthesizer({
+        generateBootstrapVersionRule: false,
+        fileAssetsBucketName: `${DIST_OUTPUT_BUCKET}-\${AWS::Region}`,
+        bucketPrefix: `${SOLUTION_NAME}/${VERSION}/`,
+      })
+    : new DefaultStackSynthesizer({
+        generateBootstrapVersionRule: false,
+      });
 
 const app = new App({
   context: {
@@ -33,7 +35,9 @@ const solutionId = SOLUTION_ID ?? app.node.tryGetContext("solutionId");
 const description = `(${solutionId}) - ${solutionDisplayName}. Version ${solutionVersion}`;
 
 new ServerlessImageHandlerStack(app, "v7-Stack", {
-  synthesizer,
+  // Haus (Wroom): deploy under a chosen CloudFormation name, e.g. STACK_NAME=wroom-v8.
+  stackName: process.env.STACK_NAME,
+  synthesizer: createSynthesizer(),
   description,
   solutionId,
   solutionVersion,
@@ -41,7 +45,7 @@ new ServerlessImageHandlerStack(app, "v7-Stack", {
 });
 
 const managementStackProps: ManagementStackProps = {
-  synthesizer,
+  synthesizer: createSynthesizer(),
   solutionId,
   solutionName,
   solutionVersion,

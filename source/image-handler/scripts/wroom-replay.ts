@@ -1,6 +1,7 @@
 // Haus (Wroom): replay comparison between live Wroom and this code run locally.
 // Usage (from source/image-handler):
-//   npx ts-node scripts/wroom-replay.ts <sample.json> <out-dir> [live-base-url]
+//   npx ts-node scripts/wroom-replay.ts <sample.json> <out-dir> [live-base-url] [new-base-url]
+// With new-base-url the new side is a deployed endpoint instead of the local handler.
 // sample.json comes from docs/plans/wroom-tools/sample_paths.py. Each path is requested twice (Accept image/webp and
 // */*) from live Wroom and from the local handler, then status, format, dimensions and size are compared.
 
@@ -78,7 +79,7 @@ function verdict(l: Side, n: Side): string {
 }
 
 async function main() {
-  const [sampleFile, outDir, base = "https://wrooom.webien.io"] = process.argv.slice(2);
+  const [sampleFile, outDir, base = "https://wrooom.webien.io", newBase] = process.argv.slice(2);
   const samples: Sample[] = JSON.parse(fs.readFileSync(sampleFile, "utf8"));
   fs.mkdirSync(outDir, { recursive: true });
   const rows: string[] = [
@@ -93,7 +94,7 @@ async function main() {
       const { s, a } = jobs[next++];
       let l: Side, n: Side;
       try {
-        [l, n] = await Promise.all([live(base, s.path, a), local(s.path, a)]);
+        [l, n] = await Promise.all([live(base, s.path, a), newBase ? live(newBase, s.path, a) : local(s.path, a)]);
       } catch (error) {
         counts.error = (counts.error ?? 0) + 1;
         rows.push([s.path, s.host, a, "error", String(error).replace(/,/g, ";")].join(","));
